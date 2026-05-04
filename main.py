@@ -1,22 +1,24 @@
 from fastmcp import FastMCP
-import sqlite3
+import aiosqlite
 import os
 import json
 import csv
 
 mcp = FastMCP(name="Expense Tracker")
 
+# -------------------- PATH SETUP --------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-db_path = os.path.join(BASE_DIR, "expense_tracker.db")
+db_path = os.getenv("DB_PATH", os.path.join("/tmp", "expense_tracker.db"))
 categories_path = os.path.join(BASE_DIR, "categories.json")
 
 
 # -------------------- INIT DB --------------------
-def init_db():
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("""
+async def init_db():
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS expenses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT,
                 date TEXT NOT NULL,
                 category TEXT NOT NULL,
                 amount REAL NOT NULL,
@@ -24,8 +26,12 @@ def init_db():
                 note TEXT DEFAULT ''
             )
         """)
+        await db.commit()
 
-init_db()
+
+# run init
+import asyncio
+asyncio.run(init_db())
 
 
 # -------------------- RESOURCE --------------------
@@ -43,46 +49,47 @@ def categories():
 # -------------------- TOOLS --------------------
 
 @mcp.tool
-def add_expense(date: str, category: str, amount: float, subcategory: str = "", note: str = ""):
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.execute("""
-            INSERT INTO expenses (date, category, amount, subcategory, note)
-            VALUES (?, ?, ?, ?, ?)
-        """, (date, category, amount, subcategory, note))
+async def add_expense(user_id: str, date: str, category: str, amount: float, subcategory: str = "", note: str = ""):
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute("""
+            INSERT INTO expenses (user_id, date, category, amount, subcategory, note)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (user_id, date, category, amount, subcategory, note))
+        await db.commit()
         return {"status": "ok", "id": cur.lastrowid}
 
 
 @mcp.tool
-def list_expenses(start_date: str, end_date: str):
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.execute("""
+async def list_expenses(user_id: str, start_date: str, end_date: str):
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute("""
             SELECT id, date, category, amount, subcategory, note
             FROM expenses
-            WHERE date BETWEEN ? AND ?
+            WHERE user_id=? AND date BETWEEN ? AND ?
             ORDER BY id ASC
-        """, (start_date, end_date))
-
+        """, (user_id, start_date, end_date))
+        rows = await cur.fetchall()
         cols = [d[0] for d in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
+        return [dict(zip(cols, row)) for row in rows]
 
 
 @mcp.tool
-def summary(start_date: str, end_date: str):
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.execute("""
+async def summary(user_id: str, start_date: str, end_date: str):
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute("""
             SELECT category, SUM(amount)
             FROM expenses
-            WHERE date BETWEEN ? AND ?
+            WHERE user_id=? AND date BETWEEN ? AND ?
             GROUP BY category
             ORDER BY SUM(amount) DESC
-        """, (start_date, end_date))
-
-        return [dict(zip(["category", "amount"], row)) for row in cur.fetchall()]
+        """, (user_id, start_date, end_date))
+        rows = await cur.fetchall()
+        return [dict(zip(["category", "amount"], row)) for row in rows]
 
 
 @mcp.tool
-def update_expense(id: int, date=None, category=None, amount=None, subcategory=None, note=None):
-    with sqlite3.connect(db_path) as conn:
+async def update_expense(user_id: str, id: int, date=None, category=None, amount=None, subcategory=None, note=None):
+    async with aiosqlite.connect(db_path) as db:
         fields = []
         values = []
 
@@ -105,105 +112,112 @@ def update_expense(id: int, date=None, category=None, amount=None, subcategory=N
         if not fields:
             return {"status": "no fields to update"}
 
-        values.append(id)
+        values.extend([user_id, id])
 
-        conn.execute(f"UPDATE expenses SET {', '.join(fields)} WHERE id=?", values)
+        await db.execute(
+            f"UPDATE expenses SET {', '.join(fields)} WHERE user_id=? AND id=?",
+            values
+        )
+        await db.commit()
         return {"status": "updated"}
 
 
 @mcp.tool
-def delete_expense(id: int):
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("DELETE FROM expenses WHERE id=?", (id,))
+async def delete_expense(user_id: str, id: int):
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "DELETE FROM expenses WHERE user_id=? AND id=?",
+            (user_id, id)
+        )
+        await db.commit()
         return {"status": "deleted"}
 
 
 @mcp.tool
-def total_spent(start_date: str, end_date: str):
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.execute("""
+async def total_spent(user_id: str, start_date: str, end_date: str):
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute("""
             SELECT SUM(amount)
             FROM expenses
-            WHERE date BETWEEN ? AND ?
-        """, (start_date, end_date))
-
-        return {"total": cur.fetchone()[0] or 0}
+            WHERE user_id=? AND date BETWEEN ? AND ?
+        """, (user_id, start_date, end_date))
+        val = await cur.fetchone()
+        return {"total": val[0] or 0}
 
 
 @mcp.tool
-def category_spending(category: str, start_date: str, end_date: str):
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.execute("""
+async def category_spending(user_id: str, category: str, start_date: str, end_date: str):
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute("""
             SELECT SUM(amount)
             FROM expenses
-            WHERE category=? AND date BETWEEN ? AND ?
-        """, (category, start_date, end_date))
-
-        return {"category": category, "amount": cur.fetchone()[0] or 0}
+            WHERE user_id=? AND category=? AND date BETWEEN ? AND ?
+        """, (user_id, category, start_date, end_date))
+        val = await cur.fetchone()
+        return {"category": category, "amount": val[0] or 0}
 
 
 @mcp.tool
-def monthly_summary(year: int, month: int):
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.execute("""
+async def monthly_summary(user_id: str, year: int, month: int):
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute("""
             SELECT category, SUM(amount)
             FROM expenses
-            WHERE strftime('%Y', date)=?
+            WHERE user_id=? AND strftime('%Y', date)=?
               AND strftime('%m', date)=?
             GROUP BY category
-        """, (str(year), f"{month:02d}"))
-
-        return [dict(zip(["category", "amount"], row)) for row in cur.fetchall()]
+        """, (user_id, str(year), f"{month:02d}"))
+        rows = await cur.fetchall()
+        return [dict(zip(["category", "amount"], row)) for row in rows]
 
 
 @mcp.tool
-def search_expenses(keyword: str):
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.execute("""
+async def search_expenses(user_id: str, keyword: str):
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute("""
             SELECT * FROM expenses
-            WHERE category LIKE ? OR note LIKE ?
-        """, (f"%{keyword}%", f"%{keyword}%"))
-
+            WHERE user_id=? AND (category LIKE ? OR note LIKE ?)
+        """, (user_id, f"%{keyword}%", f"%{keyword}%"))
+        rows = await cur.fetchall()
         cols = [d[0] for d in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
+        return [dict(zip(cols, row)) for row in rows]
 
 
 @mcp.tool
-def filter_by_amount(min_amount: float, max_amount: float):
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.execute("""
+async def filter_by_amount(user_id: str, min_amount: float, max_amount: float):
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute("""
             SELECT * FROM expenses
-            WHERE amount BETWEEN ? AND ?
-        """, (min_amount, max_amount))
-
+            WHERE user_id=? AND amount BETWEEN ? AND ?
+        """, (user_id, min_amount, max_amount))
+        rows = await cur.fetchall()
         cols = [d[0] for d in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
+        return [dict(zip(cols, row)) for row in rows]
 
 
 @mcp.tool
-def daily_spending(start_date: str, end_date: str):
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.execute("""
+async def daily_spending(user_id: str, start_date: str, end_date: str):
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute("""
             SELECT date, SUM(amount)
             FROM expenses
-            WHERE date BETWEEN ? AND ?
+            WHERE user_id=? AND date BETWEEN ? AND ?
             GROUP BY date
             ORDER BY date
-        """, (start_date, end_date))
-
-        return [dict(zip(["date", "amount"], row)) for row in cur.fetchall()]
+        """, (user_id, start_date, end_date))
+        rows = await cur.fetchall()
+        return [dict(zip(["date", "amount"], row)) for row in rows]
 
 
 @mcp.tool
-def budget_check(category: str, limit: float, start_date: str, end_date: str):
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.execute("""
+async def budget_check(user_id: str, category: str, limit: float, start_date: str, end_date: str):
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute("""
             SELECT SUM(amount)
             FROM expenses
-            WHERE category=? AND date BETWEEN ? AND ?
-        """, (category, start_date, end_date))
-
-        spent = cur.fetchone()[0] or 0
+            WHERE user_id=? AND category=? AND date BETWEEN ? AND ?
+        """, (user_id, category, start_date, end_date))
+        spent = (await cur.fetchone())[0] or 0
 
         return {
             "category": category,
@@ -214,39 +228,42 @@ def budget_check(category: str, limit: float, start_date: str, end_date: str):
 
 
 @mcp.tool
-def highest_expense():
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.execute("""
+async def highest_expense(user_id: str):
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute("""
             SELECT * FROM expenses
+            WHERE user_id=?
             ORDER BY amount DESC
             LIMIT 1
-        """)
-
-        row = cur.fetchone()
+        """, (user_id,))
+        row = await cur.fetchone()
         cols = [d[0] for d in cur.description]
         return dict(zip(cols, row)) if row else {}
 
 
 @mcp.tool
-def top_categories(limit: int = 3):
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.execute("""
+async def top_categories(user_id: str, limit: int = 3):
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute("""
             SELECT category, SUM(amount) as total
             FROM expenses
+            WHERE user_id=?
             GROUP BY category
             ORDER BY total DESC
             LIMIT ?
-        """, (limit,))
-
-        return [dict(zip(["category", "total"], row)) for row in cur.fetchall()]
+        """, (user_id, limit))
+        rows = await cur.fetchall()
+        return [dict(zip(["category", "total"], row)) for row in rows]
 
 
 @mcp.tool
-def export_csv(filename: str = "expenses.csv"):
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.execute("SELECT * FROM expenses")
+async def export_csv(user_id: str, filename: str = "expenses.csv"):
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute("""
+            SELECT * FROM expenses WHERE user_id=?
+        """, (user_id,))
+        rows = await cur.fetchall()
         cols = [d[0] for d in cur.description]
-        rows = cur.fetchall()
 
     with open(filename, "w", newline="") as f:
         writer = csv.writer(f)
@@ -258,5 +275,5 @@ def export_csv(filename: str = "expenses.csv"):
 
 # -------------------- RUN SERVER --------------------
 if __name__ == "__main__":
-    print("🚀 MCP Expense Tracker running on http://0.0.0.0:8000/mcp")
-    mcp.run(transport="http", host="0.0.0.0", port=8000)
+    print("🚀 MCP Server running at ws://0.0.0.0:8000")
+    mcp.run(transport="ws", host="0.0.0.0", port=8000)
