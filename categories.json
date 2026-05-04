@@ -1,0 +1,106 @@
+{
+  "Food & Dining": [
+    "Groceries",
+    "Restaurants",
+    "Coffee/Tea",
+    "Bars",
+    "Fast Food",
+    "Delivery/Takeout"
+  ],
+  "Transportation": [
+    "Gas/Fuel",
+    "Public Transit",
+    "Taxi/Rideshare",
+    "Parking",
+    "Car Maintenance",
+    "Tolls",
+    "Car Insurance"
+  ],
+  "Housing": [
+    "Rent/Mortgage",
+    "Property Taxes",
+    "Home Repairs",
+    "Furniture",
+    "Home Cleaning"
+  ],
+  "Utilities": [
+    "Electricity",
+    "Water",
+    "Gas",
+    "Internet",
+    "Phone",
+    "Streaming Services",
+    "Trash/Recycling"
+  ],
+  "Entertainment": [
+    "Movies/Theater",
+    "Concerts/Events",
+    "Books/Magazines",
+    "Video Games",
+    "Hobbies",
+    "Sports/Recreation"
+  ],
+  "Shopping": [
+    "Clothing",
+    "Shoes",
+    "Electronics",
+    "Home Goods",
+    "Toys/Games",
+    "Office Supplies"
+  ],
+  "Health & Medical": [
+    "Doctor Visits",
+    "Medications",
+    "Dental Care",
+    "Vision Care",
+    "Gym/Fitness",
+    "Supplements",
+    "Therapy/Counseling"
+  ],
+  "Personal Care": [
+    "Haircuts",
+    "Spa/Beauty",
+    "Cosmetics",
+    "Laundry/Dry Cleaning"
+  ],
+  "Education": [
+    "Tuition/Fees",
+    "Books/Materials",
+    "Courses/Classes",
+    "Student Loans"
+  ],
+  "Financial": [
+    "Bank Fees",
+    "Loan Payments",
+    "Insurance Premiums",
+    "Savings",
+    "Investments"
+  ],
+  "Gifts & Donations": [
+    "Birthdays",
+    "Holidays",
+    "Charity/Donations",
+    "Weddings"
+  ],
+  "Travel": [
+    "Flights",
+    "Hotels",
+    "Meals",
+    "Souvenirs",
+    "Local Travel"
+  ],
+  "Pets": [
+    "Food",
+    "Vet Visits",
+    "Grooming",
+    "Supplies"
+  ],
+  "Subscriptions": [
+    "Software",
+    "Apps",
+    "Memberships"
+  ],
+  "Miscellaneous": [
+    "Other"
+  ]
+}
